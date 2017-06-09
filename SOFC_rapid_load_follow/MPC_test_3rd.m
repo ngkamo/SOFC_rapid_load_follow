@@ -102,7 +102,7 @@ end
 %% ------------------------------
 % Linearizing the system
 % -------------------------------
-[Ac,Bc,Cc,Dc] = MPC_linearization_mat(u_f,dx_opt(:,target),Pel_opt(target),Ucell_opt(target),eff_opt(target),T_in,SOFC_data_nominal);
+[Ac,Bc,Cc,Dc] = MPC_linearization_mat(u_f,dx_opt(:,target),Pel_opt(target),Ucell_opt(target),T_in,SOFC_data_nominal);
 
 %% Continuous time state-space model
 sys = ss(Ac,Bc,Cc,Dc);
@@ -190,7 +190,7 @@ solutions_target = H\[0; 0; zeros(ns+ni-no-1,1)];
 Q = 1*eye(ns);
 R = 100*eye(ni);
 
-N = 20;  % horizon length
+N = 40;  % horizon length
 
 % Variables
 x_hat  = sdpvar(ns,N,'full');
@@ -214,10 +214,17 @@ for i = 1:N-1
               + (u_hat(:,i)-u_target)'*R*(u_hat(:,i)-u_target);
 end
 
+slew_rate = repmat([0.0005 1 2],N-1,1);
+test = diff(u_hat,1,2);
+con = con + ( -slew_rate <= diff(u_hat,1,2)' <= slew_rate);
 con = con + ( M*(u_hat(:,N)-u_target+u_ss) <= m );
 con = con + ( lb <= u_hat(:,N)-u_target+u_ss <= ub );
+
 obj = obj + (x_hat(:,i)-x_target)'*Q*(x_hat(:,i)-x_target)...
           + (u_hat(:,i)-u_target)'*R*(u_hat(:,i)-u_target);
+      
+
+
 
 % Parameters
 parameters_in = {x_hat(:,1), x_target, u_target};
@@ -227,6 +234,7 @@ solutions_out = {u_hat};
 controller = optimizer(con, obj, [], parameters_in, solutions_out);
 
 %% Simulation linear model
+myProblem.TC.TimeConstantOff = 0;
 Nsim = size(r_target,2);  % length of the simulation
 Nsim = 180;
 x_hat = [];
@@ -338,8 +346,8 @@ legend('linear','non linear')
 grid on
 
 figure('Name','temperatures')
-[ts,ys] = stairs(timestep(1:end),x_hat(3,:));
-plot(ts,ys,timestep,x_hat_nonlin(3,:));
+[ts,ys] = stairs(timestep(1:end),x_hat(6,:));
+plot(ts,ys,timestep,x_hat_nonlin(6,:));
 xlabel('Time [min]')
 ylabel('Temperature [K]')
 title('Temperature [K]')

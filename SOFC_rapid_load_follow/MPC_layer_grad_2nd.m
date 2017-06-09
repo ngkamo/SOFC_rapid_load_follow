@@ -54,8 +54,10 @@ N = 50;  % horizon length
 x_hat  = sdpvar(ns,N,'full');
 x_target = sdpvar(ns,1,'full');
 u_hat  = sdpvar(ni,N,'full');
+u_nonlin = sdpvar(ni,N,'full');
 u_target = sdpvar(ni,1,'full');
 u_prev = sdpvar(ni,1,'full');
+y = sdpvar(no,N,'full');
 
 slew_rate = [0.001; 0.1; 0.5];
 
@@ -72,7 +74,7 @@ for i = 1:N-1
     
     con = con + ( -slew_rate <= u_hat(:,i+1)-u_hat(:,i) <= slew_rate );
     
-    y(:,i) = C*x_hat(:,i) + D*u_hat(:,i) + y_ss;
+    con = con + ( y(:,i) == C*x_hat(:,i) + D*u_hat(:,i) + y_ss );
     con = con + ( y(2,i) >= 0.7 );
     
     obj = obj + (x_hat(:,i)-x_target)'*Q*(x_hat(:,i)-x_target)...
@@ -111,6 +113,21 @@ u_previous = initial_config(1:3);
 for j = 1:Nsim
     [u_hat, infeasible] = controller{{xhat_nonlin(:,j), x_setpoint, u_target, u_previous}};
     u_nonlin(:,j) = u_hat(:,1)+u_ss;
+    if u_nonlin(1,j)-u_previous(1) > slew_rate(1)
+        u_nonlin(1,j) = u_previous(1) + slew_rate(1);
+    elseif u_nonlin(1,j)-u_previous(1) < -slew_rate(1)
+        u_nonlin(1,j) = u_previous(1) - slew_rate(1);
+    end
+    if (u_nonlin(2,j)-u_previous(2)) > slew_rate(2)
+        u_nonlin(2,j) = u_previous(2) + slew_rate(2);
+    elseif u_nonlin(2,j)-u_previous(2) < -slew_rate(2)
+        u_nonlin(2,j) = u_previous(2) - slew_rate(2);
+    end
+    if u_nonlin(3,j)-u_previous(3) > slew_rate(3)
+        u_nonlin(3,j) = u_previous(3) + slew_rate(3);
+    elseif u_nonlin(3,j)-u_previous(3) < -slew_rate(3)
+        u_nonlin(3,j) = u_previous(3) - slew_rate(3);
+    end
     u_previous = u_nonlin(:,j);
     
     sol = ode15s(@(t,x) fPrimeMyProject(t,x,u_nonlin(:,j),T_in,SOFC_data_plant), [0 Ts], x_nonlin(:,j), opts);
@@ -172,8 +189,21 @@ u_previous = initial_config(1:3);
 for j = 1:Nsim
     [u_hat, infeasible] = controller{{xhat_nom(:,j), x_setpoint, u_target, u_previous}};
     u_nonlin(:,j) = u_hat(:,1)+u_ss;
-    
-    
+    if u_nonlin(1,j)-u_previous(1) > slew_rate(1)
+        u_nonlin(1,j) = u_previous(1) + slew_rate(1);
+    elseif u_nonlin(1,j)-u_previous(1) < -slew_rate(1)
+        u_nonlin(1,j) = u_previous(1) - slew_rate(1);
+    end
+    if (u_nonlin(2,j)-u_previous(2)) > slew_rate(2)
+        u_nonlin(2,j) = u_previous(2) + slew_rate(2);
+    elseif u_nonlin(2,j)-u_previous(2) < -slew_rate(2)
+        u_nonlin(2,j) = u_previous(2) - slew_rate(2);
+    end
+    if u_nonlin(3,j)-u_previous(3) > slew_rate(3)
+        u_nonlin(3,j) = u_previous(3) + slew_rate(3);
+    elseif u_nonlin(3,j)-u_previous(3) < -slew_rate(3)
+        u_nonlin(3,j) = u_previous(3) - slew_rate(3);
+    end
     u_previous = u_nonlin(:,j);
     
     sol = ode15s(@(t,x) fPrimeMyProject(t,x,u_nonlin(:,j),T_in,SOFC_data_nominal), [0 Ts], x_nom(:,j), opts);

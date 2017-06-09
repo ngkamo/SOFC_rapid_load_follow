@@ -72,7 +72,7 @@ for i = 1:N-1
               + (u_hat(:,i)-u_target)'*R*(u_hat(:,i)-u_target);
 end
 
-con = con + ( M*(u_hat(:,N)-u_target+u_ss) <= m );
+con = con + ( M*(u_hat(:,N)-u_target+u_ss ) <= m );
 con = con + ( lb <= u_hat(:,N)-u_target+u_ss <= ub );
 obj = obj + (x_hat(:,i)-x_target)'*Q*(x_hat(:,i)-x_target)...
           + (u_hat(:,i)-u_target)'*R*(u_hat(:,i)-u_target);

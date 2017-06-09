@@ -73,11 +73,29 @@ u_0 = [q_CH4inp,q_AIRcathinp,Iinp];
 % Initial guess for the optimization problem
 u0 = [u_0 T_0];
 
-% -------------
-% Constraints 
-% Pel_opt = [80 100 90];
-% Ps_el = [Pel_opt(1)*ones(1,5) Pel_opt(2)*ones(1,5) Pel_opt(3)*ones(1,5)]; % Power profile
-Ps_el = [90 90 90 90 90];
+%% Optimal values
+Pel_opt    = [80 90 100];
+Ucell_opt  = 0.7;
+eff_opt    = [0.4297   0.4260  0.4226];
+inputs_opt = [0.3163   0.3589  0.402;
+              12.4936 13.8194 15.1185;
+              19.0476 21.4286 23.8095];
+
+profile_setpoint = [2 2 2];  % profile setpoint
+
+Ps_el = [];
+Uopt_hist = [];
+inputs_opt_hist = [];
+eff_opt_hist = [];
+for i = 1:size(profile_setpoint,2)
+    Ps_el(i) = Pel_opt(profile_setpoint(i));
+    inputs_opt_hist(:,i) = inputs_opt(:,profile_setpoint(i));
+    eff_opt_hist(i) = eff_opt(profile_setpoint(i));
+end
+
+%% -------------------------
+% Constraints, program loop
+
 % ub = [27.25,272.53/0.21, 30, 600*ones(1,1)+273.15 800*ones(1,4)+273.15 1600+273.15 1474 1474];
 % lb = [1.36E-03,0.01/0.21, 0, 450*ones(1,6)+273.15   200+273.15 200+273.15];
 ub = [27.25,272.53/0.21, 30, Inf*ones(1,8)];
@@ -100,7 +118,7 @@ B   =  [0;0;0];
 
 myProblem.TC.TimeConstantOff = 0;
 
-last_config = [0.3589 13.8194 21.4286 897.5259 1152.4056 1151.7350 1151.9062 1151.4877 1513.9958 978.1512 965.7702]'; % 90 W nominal model
+last_config = [0.3489 16.8194 20.4286 897.5259 1152.4056 1151.7350 1151.9062 1151.4877 1513.9958 978.1512 965.7702]'; % 90 W nominal model
 modif = zeros(3,4);
 
 states_plant_hist = [];
@@ -109,17 +127,19 @@ volt_plant_hist   = [];
 input_plant_hist  = [];
 eff_plant_hist    = [];
 
-for i = 1:5
+for i = 1:size(profile_setpoint,2)
     % ----------------------------
     %  RTO layer
     % ----------------------------
     it = i;
-    [u_opt,Ucell_opt] = RTO_layer(u0,modif,T_in,A,B,lb,ub,SOFC_data_nominal,myProblem.OPT.options);
+    [u_opt] = RTO_layer(u0,modif,T_in,A,B,lb,ub,SOFC_data_nominal,myProblem.OPT.options);
 
     % ----------------------------
     %  MPC layer
     % ----------------------------
-    [output_plant, input_plant, last_config, P_plant, U_plant, eff_plant, modif] = MPC_layer(u_opt',modif,Ps_el(it),Ucell_opt,T_in,SOFC_data_nominal,SOFC_data_plant,A,B,lb,ub,last_config);
+    tic
+    [output_plant, input_plant, last_config, P_plant, U_plant, eff_plant, modif] = MPC_layer_grad_2nd(u_opt',modif,Ps_el(it),Ucell_opt,T_in,SOFC_data_nominal,SOFC_data_plant,A,B,lb,ub,last_config);
+    toc
     
     states_plant_hist = [ states_plant_hist output_plant];
     input_plant_hist  = [input_plant_hist input_plant];
@@ -134,15 +154,9 @@ end
 
 %% Optimal values
 Popt_hist = repelem(Ps_el,duration_step);
-Uopt_hist = 0.7*ones(1,size(volt_plant_hist,2));
-
-eff_opt = [0.426 0.426 0.426 0.426 0.426];
-eff_opt_hist = repelem(eff_opt,duration_step);
-
-inputs_opt = [0.3589 0.3589 0.3589 0.3589 0.3589;
-              13.8194 13.8194 13.8194 13.8194 13.8194;
-              21.4286 21.4286 21.4286 21.4286 21.4286];
-inputs_opt_hist = repelem(inputs_opt,1,duration_step);
+Uopt_hist = Ucell_opt*ones(1,size(volt_plant_hist,2));
+eff_opt_hist = repelem(eff_opt_hist,duration_step);
+inputs_opt_hist = repelem(inputs_opt_hist,1,duration_step);
 
 %% Post-processing result
 set(0,'DefaultFigureWindowStyle','docked')

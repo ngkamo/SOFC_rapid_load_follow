@@ -57,7 +57,6 @@ u0 = [u_0 T_0];
 
 %% Constraints 
 Pel_opt = [80 100 90];
-Ps_el = [Pel_opt(1)*ones(1,5) Pel_opt(2)*ones(1,5) Pel_opt(3)*ones(1,5)]; % Power profile
 
 % ub = [27.25,272.53/0.21, 30, 600*ones(1,1)+273.15 800*ones(1,4)+273.15 1600+273.15 1474 1474];
 % lb = [1.36E-03,0.01/0.21, 0, 450*ones(1,6)+273.15   200+273.15 200+273.15];
@@ -97,13 +96,32 @@ end
 %% ---------------------------------------
 % Modifier adaptation optimization
 % ----------------------------------------
-Ps_el = [Pel_opt(1)*ones(1,5) Pel_opt(2)*ones(1,5) Pel_opt(3)*ones(1,5)]; % Power profile
-u_log = []; % storing input values for all iterations
+% Optimal values
+Pel_opt    = [80 90 100];
+Ucell_opt  = 0.7;
+eff_opt    = [0.4297   0.4260  0.4226];
+inputs_opt = [0.3163   0.3589  0.402;
+              12.4936 13.8194 15.1185;
+              19.0476 21.4286 23.8095];
+
+profile_setpoint = [2 2 2];  % profile setpoint
+
+Ps_el = [];
+Uopt_hist = [];
+inputs_opt_hist = [];
+eff_opt_hist = [];
+for i = 1:size(profile_setpoint,2)
+    Ps_el(i) = Pel_opt(profile_setpoint(i));
+    inputs_opt_hist(:,i) = inputs_opt(:,profile_setpoint(i));
+    eff_opt_hist(i) = eff_opt(profile_setpoint(i));
+end
+
+u_hist = []; % storing input values for all iterations
 
 modif = zeros(3,4);
 grad_toggle = 0; % activate gradient computation adaptation
 
-Kca = [0 1 1];
+Kca = [0 0.9 0.9];
 Kgrad = 1;
 deltaH = [1e-2 1e-2 1e-2];
 u_previous = 0;
@@ -127,24 +145,19 @@ for k = 1:size(Ps_el,2)
     
     if grad_toggle == 1
         for i = 1:3
-            u_nomsteady = u_f;
-            u_nomgrad   = u_f;
-            u_plasteady = u_f;
-            u_plagrad   = u_f;
-            u_nomgrad(i) = u_nomgrad(i) + deltaH(i);
-            u_plagrad(i) = u_plagrad(i) + deltaH(i);
+%             u_nomsteady = u_f;
+            u_grad   = u_f;
+            u_grad(i) = u_grad(i) + deltaH(i);
 
-            Tsteady_nomgrad    = OPTIM_SteadyState(u_nomgrad,T_0,T_in,SOFC_data_nominal);
-            u_nomgrad(4:end)   = Tsteady_nomgrad;
-            Tsteady_pla        = OPTIM_SteadyState(u_plasteady,T_0,T_in,SOFC_data_plant);
-            u_plasteady(4:end) = Tsteady_pla;
-            Tsteady_plagrad    = OPTIM_SteadyState(u_plagrad,T_0,T_in,SOFC_data_plant);
-            u_plagrad(4:end)   = Tsteady_plagrad;
+            Tsteady_nomgrad    = OPTIM_SteadyState(u_grad,T_0,T_in,SOFC_data_nominal);
+            u_grad(4:end)   = Tsteady_nomgrad;
+            Tsteady_plagrad    = OPTIM_SteadyState(u_grad,T_0,T_in,SOFC_data_plant);
+            u_grad(4:end)   = Tsteady_plagrad;
             
             [~,Ucell_nomnl1,Pel_nomnl1,~,~,~,eta_sys_nomnl1] = fPrimeMyProject(0,tempsteady_nominal,u_f(1:3),T_in,SOFC_data_nominal);
-            [~,Ucell_nomnl2,Pel_nomnl2,~,~,~,eta_sys_nomnl2] = fPrimeMyProject(0,u_nomgrad(4:end),u_nomgrad(1:3),T_in,SOFC_data_nominal);
-            [~,Ucell_plant1,Pel_plant1,~,~,~,eta_sys_plant1] = fPrimeMyProject(0,u_plasteady(4:end),u_plasteady(1:3),T_in,SOFC_data_plant);
-            [~,Ucell_plant2,Pel_plant2,~,~,~,eta_sys_plant2] = fPrimeMyProject(0,u_plagrad(4:end),u_plagrad(1:3),T_in,SOFC_data_plant);
+            [~,Ucell_nomnl2,Pel_nomnl2,~,~,~,eta_sys_nomnl2] = fPrimeMyProject(0,u_grad(4:end),u_grad(1:3),T_in,SOFC_data_nominal);
+            [~,Ucell_plant1,Pel_plant1,~,~,~,eta_sys_plant1] = fPrimeMyProject(0,tempsteady_plant,u_f(1:3),T_in,SOFC_data_plant);
+            [~,Ucell_plant2,Pel_plant2,~,~,~,eta_sys_plant2] = fPrimeMyProject(0,u_grad(4:end),u_grad(1:3),T_in,SOFC_data_plant);
             
             grad_Ucell_nomnl(i) = (Ucell_nomnl2-Ucell_nomnl1)/deltaH(i);
             grad_Ucell_plant(i) = (Ucell_plant2-Ucell_plant1)/deltaH(i);
@@ -158,14 +171,14 @@ for k = 1:size(Ps_el,2)
         modif(1,1:3) = (1-Kgrad)*modif(1,1:3) + Kgrad*(grad_Effic_plant-grad_Effic_nomnl); % Gradient efficiency
         
         modif_gr_Ucell = [modif_gr_Ucell; modif(2,1:3)];
-        modif_gr_Pel   = [modif_gr_Pel; modif(3,1:3)];
+        modif_gr_Pel   = [modif_gr_Pel;   modif(3,1:3)];
         modif_gr_Effic = [modif_gr_Effic; modif(1,1:3)];
     end
     
     modif_ca_Ucell = [modif_ca_Ucell; modif(2,4)];
     modif_ca_Pel   = [modif_ca_Pel; modif(3,4)];
     u0 = u_f;
-    u_log = [u_log; u_f];
+    u_hist = [u_hist; u_f];
     u_previous = u_f(1:3);
 end
 
@@ -173,10 +186,14 @@ end
 % POST-PROCESSING
 % -------------------------
 % Optimal plant profile
-Pelopt = [Pel_opt(1)*ones(1,5), Pel_opt(2)*ones(1,5), Pel_opt(3)*ones(1,5)];
-etaopt = [eff_opt(1)*ones(1,5), eff_opt(2)*ones(1,5), eff_opt(3)*ones(1,5)];
-Ucellopt = [0.7*ones(1,5), 0.7*ones(1,5), 0.7*ones(1,5)];
-uopt = [u_opt(1,1:3)'*ones(1,5), u_opt(2,1:3)'*ones(1,5), u_opt(3,1:3)'*ones(1,5)];
+% Pelopt = [Pel_opt(1)*ones(1,5), Pel_opt(2)*ones(1,5), Pel_opt(3)*ones(1,5)];
+% etaopt = [eff_opt(1)*ones(1,5), eff_opt(2)*ones(1,5), eff_opt(3)*ones(1,5)];
+% Ucellopt = [0.7*ones(1,5), 0.7*ones(1,5), 0.7*ones(1,5)];
+% uopt = [u_opt(1,1:3)'*ones(1,5), u_opt(2,1:3)'*ones(1,5), u_opt(3,1:3)'*ones(1,5)];
+
+% Optimal values
+Popt_hist = Ps_el;
+Uopt_hist = Ucell_opt*ones(1,size(Ps_el,2));
 
 % Pelopt = [Pel_opt(1)*ones(1,5)]%, Pel_opt(2)*ones(1,5), Pel_opt(3)*ones(1,5)];
 % etaopt = [eff_opt(1)*ones(1,5)]%, eff_opt(2)*ones(1,5), eff_opt(3)*ones(1,5)];
@@ -186,7 +203,7 @@ set(0,'DefaultFigureWindowStyle','docked')
 
 figure
 set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-h = stairs([Pel_plant', Pelopt']);
+h = stairs([Pel_plant', Popt_hist']);
 h(2).LineStyle = '--';
 h(2).Color = 'k';
 legend({'plant','optimal'},'Interpreter','latex')
@@ -198,10 +215,10 @@ set(gca,'Box','off',...
 'FontWeight','normal','FontSize',12,...
 'TickLabelInterpreter','latex')
 grid on
-
+%%
 figure
 set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-h = stairs([eta_sys_plant', etaopt']);
+h = stairs([eta_sys_plant', eff_opt_hist']);
 h(2).LineStyle = '--';
 h(2).Color = 'k';
 legend({'plant','optimal'},'Interpreter','latex')
@@ -216,7 +233,7 @@ grid on
 %%
 figure
 set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-h = stairs([Ucell_plant', Ucellopt']);
+h = stairs([Ucell_plant', Uopt_hist']);
 h(2).LineStyle = '--';
 h(2).Color = 'k';
 legend({'plant','optimal'},'Interpreter','latex','Location','southeast')
@@ -227,22 +244,22 @@ set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',11,...
 'TickLabelInterpreter','latex')
 grid on
 %%
-figure
-set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-stairs([modif_ca_Pel, modif_ca_Ucell]);
-legend({'power','voltage'},'Interpreter','latex')
-title('Constraint-values','Interpreter','latex')
-xlabel('iteration','Interpreter','latex');
-ylabel('Constraint-values [-]','Interpreter','latex');
-set(gca,'Box','off',...
-'FontUnits','points',...
-'FontWeight','normal','FontSize',11,...
-'TickLabelInterpreter','latex')
-grid on
+% figure
+% set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
+% stairs([modif_ca_Pel, modif_ca_Ucell]);
+% legend({'power','voltage'},'Interpreter','latex')
+% title('Constraint-values','Interpreter','latex')
+% xlabel('iteration','Interpreter','latex');
+% ylabel('Constraint-values [-]','Interpreter','latex');
+% set(gca,'Box','off',...
+% 'FontUnits','points',...
+% 'FontWeight','normal','FontSize',11,...
+% 'TickLabelInterpreter','latex')
+% grid on
 %%
 figure
 set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-h = stairs([u_log(:,1), uopt(1,:)']);
+h = stairs([u_hist(:,1), inputs_opt_hist(1,:)']);
 h(1).LineWidth = 1;
 h(2).LineWidth = 1;
 h(2).LineStyle = '--';
@@ -260,7 +277,7 @@ grid on
 %%
 figure
 set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-h = stairs([u_log(:,2), uopt(2,:)']);
+h = stairs([u_hist(:,2), inputs_opt_hist(2,:)']);
 h(1).LineWidth = 1;
 h(2).LineWidth = 1;
 h(2).LineStyle = '--';
@@ -278,7 +295,7 @@ grid on
 %%
 figure
 set(gcf,'Color','w','Units','centimeters','Position',[30 10 16 9])
-h = stairs([u_log(:,3), uopt(3,:)']);
+h = stairs([u_hist(:,3), inputs_opt_hist(3,:)']);
 h(1).LineWidth = 1;
 h(2).LineWidth = 1;
 h(2).LineStyle = '--';

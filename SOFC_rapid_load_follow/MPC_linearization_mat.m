@@ -1,7 +1,6 @@
 function [A,B,C,D] = MPC_linearization_mat(u_ss,dx_ss,Pel_ss,U_ss,T_in,SOFC_data)
 deltaA = 0.001*ones(1,8);
 differentialA = [];
-component = 8;
 A = zeros(8,8);
 B = zeros(8,3);
 
@@ -30,12 +29,7 @@ end
 % C & D
 deltaCPel = 1e-2*ones(1,8);
 deltaCUc  = 1e-2*ones(1,8);
-deltaCEff = 1e-4*ones(1,8);
-differentialCPel = [];
-differentialCUc  = [];
-differentialCEff = [];
 C = zeros(2,8);
-
 for i = 1:length(deltaCPel)
     u_grad = u_ss;
     u_grad(3+i) = u_grad(3+i) + deltaCPel(i);
@@ -46,8 +40,6 @@ end
 
 deltaDPel = [1e-8 1e-6 1e-6];
 deltaDUc  = [1e-8 1e-2 1e-3];
-deltaDEff = [1e-7 1e-2 1e-2];
-differentialD = [];
 D = zeros(2,3);
 for i = 1:length(deltaDPel)
     u_grad = u_ss;

@@ -81,7 +81,7 @@ inputs_opt = [0.3163   0.3589  0.402;
               12.4936 13.8194 15.1185;
               19.0476 21.4286 23.8095];
 
-profile_setpoint = [2 2 2];  % profile setpoint
+profile_setpoint = [2 2 2 2];  % profile setpoint
 
 Ps_el = [];
 Uopt_hist = [];
@@ -107,7 +107,6 @@ beq = [];
 Lair_upper = 10; 
 Lair_lower = 3;
 FU_upper   = 0.7;
-%
 
 kc = (6e+4)*N_c*R*T_st/(8*P*SOFC_data_nominal.cst.F);
 
@@ -132,14 +131,13 @@ for i = 1:size(profile_setpoint,2)
     %  RTO layer
     % ----------------------------
     it = i;
-    [u_opt] = RTO_layer(u0,modif,T_in,A,B,lb,ub,SOFC_data_nominal,myProblem.OPT.options);
+    [InOut_opt] = RTO_layer(u0,modif,T_in,A,B,lb,ub,SOFC_data_nominal,myProblem.OPT.options);
 
     % ----------------------------
     %  MPC layer
     % ----------------------------
     tic
-    [output_plant, input_plant, last_config, P_plant, U_plant, eff_plant, modif] = MPC_layer_grad_2nd(u_opt',modif,Ps_el(it),Ucell_opt,T_in,SOFC_data_nominal,SOFC_data_plant,A,B,lb,ub,last_config);
-    toc
+    [output_plant, input_plant, last_config, P_plant, U_plant, eff_plant, output_nompla, modif] = MPC_epsilon(InOut_opt',modif,Ps_el(it),Ucell_opt,T_in,SOFC_data_nominal,SOFC_data_plant,A,B,lb,ub,last_config);
     
     states_plant_hist = [ states_plant_hist output_plant];
     input_plant_hist  = [input_plant_hist input_plant];
@@ -147,28 +145,38 @@ for i = 1:size(profile_setpoint,2)
     volt_plant_hist   = [volt_plant_hist U_plant];
     eff_plant_hist    = [eff_plant_hist eff_plant];
     
-    duration_step(i) = size(output_plant,2);
+    duration_RTO(i) = size(output_plant,2);
+    
+    [output_plant, input_plant, last_config, P_plant, U_plant, eff_plant, modif] = MPC_grad(InOut_opt',output_nompla,modif,Ps_el(it),Ucell_opt,T_0,T_in,SOFC_data_nominal,SOFC_data_plant,A,B,lb,ub,last_config,0);
+    states_plant_hist = [ states_plant_hist output_plant];
+    input_plant_hist  = [input_plant_hist input_plant];
+    power_plant_hist  = [power_plant_hist P_plant];
+    volt_plant_hist   = [volt_plant_hist U_plant];
+    eff_plant_hist    = [eff_plant_hist eff_plant];
+    toc
+    u_previous = InOut_opt(1:3);
+    duration_RTO(i) = duration_RTO(i) + size(output_plant,2);
     
     u0 = last_config';
 end
 
 %% Optimal values
-Popt_hist = repelem(Ps_el,duration_step);
+Popt_hist = repelem(Ps_el,duration_RTO);
 Uopt_hist = Ucell_opt*ones(1,size(volt_plant_hist,2));
-eff_opt_hist = repelem(eff_opt_hist,duration_step);
-inputs_opt_hist = repelem(inputs_opt_hist,1,duration_step);
+eff_opt_hist = repelem(eff_opt_hist,duration_RTO);
+inputs_opt_hist = repelem(inputs_opt_hist,1,duration_RTO);
 
 %% Post-processing result
 set(0,'DefaultFigureWindowStyle','docked')
 close all
 
 Ts = 10; % [s] time sample
-time_step = [1:1:size(states_plant_hist,2)]*10/60;
+time_step = [1:1:size(states_plant_hist,2)]*10/3600;
 
 figure('Name','temperatures','Color','w')
 plot(time_step, states_plant_hist,'LineWidth',1);
 legend({'Reformer','electrolyte','interconnect','fuel channel','air channel','burner','HEX fuel','HEX air'},'Interpreter','latex')
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Temperature [K]','Interpreter','latex')
 title('Temperatures in the system','Interpreter','latex')
 set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'TickLabelInterpreter','latex')
@@ -176,7 +184,7 @@ grid on
 
 figure('Name','power','Color','w')
 plot(time_step, power_plant_hist,time_step,Popt_hist,'--','LineWidth',1);
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Power $P_{el}$ [W]','Interpreter','latex')
 title('Power delivered by the system','Interpreter','latex')
 legend({'plant','optimal'},'Interpreter','latex')
@@ -185,7 +193,7 @@ grid on
 
 figure('Name','efficiency','Color','w')
 plot(time_step, eff_plant_hist,time_step,eff_opt_hist,'--','LineWidth',1);
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Efficiency $\eta$ [-]','Interpreter','latex')
 title('Efficiency of the the system','Interpreter','latex')
 legend({'plant','optimal'},'Interpreter','latex')
@@ -194,7 +202,7 @@ grid on
 
 figure('Name','voltage','Color','w')
 plot(time_step, volt_plant_hist,time_step,Uopt_hist,'--','LineWidth',1);
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Voltage $U_{cell}$ [V]','Interpreter','latex')
 title('Voltage of the cell','Interpreter','latex')
 legend({'plant','optimal'},'Interpreter','latex')
@@ -204,7 +212,7 @@ grid on
 figure('Name','methane','Color','w')
 [ts,ys] = stairs(time_step, input_plant_hist(1,:));
 plot(ts, ys,time_step,inputs_opt_hist(1,:),'--','Linewidth',1)
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Methane flow rate $\dot q_{CH4}$ [L/min]','Interpreter','latex')
 title('Methane flow rate','Interpreter','latex')
 legend({'plant','optimal'},'Interpreter','latex')
@@ -214,7 +222,7 @@ grid on
 figure('Name','air','Color','w')
 [ts,ys] = stairs(time_step, input_plant_hist(2,:));
 plot(ts, ys,time_step,inputs_opt_hist(2,:),'--','Linewidth',1)
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Air flow rate $\dot q_{air}$ [L/min]','Interpreter','latex')
 title('Air flow rate','Interpreter','latex')
 legend({'plant','optimal'},'Interpreter','latex')
@@ -224,7 +232,7 @@ grid on
 figure('Name','current','Color','w')
 [ts,ys] = stairs(time_step, input_plant_hist(3,:));
 plot(ts, ys,time_step,inputs_opt_hist(3,:),'--','Linewidth',1)
-xlabel('Time [min]','Interpreter','latex')
+xlabel('Time [h]','Interpreter','latex')
 ylabel('Current $I$ [A]','Interpreter','latex')
 title('Current','Interpreter','latex')
 set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'TickLabelInterpreter','latex')

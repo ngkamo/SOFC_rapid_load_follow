@@ -68,7 +68,7 @@ inputs_opt = [0.3163   0.3589  0.402;
 output_opt = [0.6379 0.6325 0.6274;
               4.1479 4.0433 3.9493];
 
-profile_setpoint = [1*ones(1,5) 2*ones(1,5)];  % PROFILE SETPOINT ---------
+profile_setpoint = [1*ones(1,5) 2*ones(1,5)];  % PROFILE SETPOINT ---------------------
 
 Ps_el = [];
 Uopt_hist = [];
@@ -85,7 +85,7 @@ end
 % RTO Program
 % ----------------------------
 % ------------------------- Constraints -----------------------------------
-ub = [2,50, 30, Inf*ones(1,8)];
+ub = [27.25,272.53/0.21, 30, Inf*ones(1,8)];
 lb = [1.36E-03,0.01/0.21, 0, -Inf*ones(1,8)];
 
 Aeq = [];
@@ -104,6 +104,11 @@ B   =  [0;0;0];
 
 myProblem.TC.TimeConstantOff = 0;
 
+% last_config = [0.3413,13.34,21.4285,884.6728,1116.1115,1115.4369,1115.6084,1115.1959,1439.997,934.7186,923.0911];
+last_config = [0.3014 12.0960 19.0476 895.4908 1101.9426 1101.3417 1101.5156 1101.1082 1409.1253 915.8712 905.0253];
+Nsim = 1000;
+modif = zeros(3,4);
+
 time_hist         = [];
 states_plant_hist = [];
 power_plant_hist  = [];
@@ -116,10 +121,8 @@ duration_RTO      = 0;
 duration_gradMod  = [];
 duration_inputs   = 0;
 
-grad_toggle = 1;        % toggle for computation of gradients
+grad_toggle = 1;              % toggle computation of gradients
 
-last_config = [0.3014; 12.0960; 19.0476; 895.4908; 1101.9426; 1101.3417; 1101.5156; 1101.1082; 1409.1253; 915.8712; 905.0253]; % intial states & inputs of the plant
-modif = zeros(3,4);
 tstart = 0;
 Kca = [0 0.9 0.9];
 Kgrad = 0.7;
@@ -130,28 +133,28 @@ opts_event = odeset('RelTol',1e-5,'AbsTol',1e-5,'Event',@event);
 for i = 1:size(profile_setpoint,2)
     it = i;
     % RTO layer
-    [inOut_RTO] = RTO_layer(u0,modif,T_in,A,B,lb,ub,SOFC_data_nominal,myProblem.OPT.options);
-    in_RTO      = inOut_RTO(1:3);
-    out_RTO     = inOut_RTO(4:end);
+    [inOut_opt] = RTO_layer(u0,modif,T_in,A,B,lb,ub,SOFC_data_nominal,myProblem.OPT.options);
+    in_opt  = inOut_opt(1:3);
+    out_opt = inOut_opt(4:end);
     
     % Simulations
-    [t_plant,y_plant] = ode15s(@fPrimeMyProject, [tstart Inf], last_config(4:end)',opts_event, in_RTO,T_in,SOFC_data_plant);
+    [t_plant,y_plant] = ode15s(@fPrimeMyProject, [tstart Inf], last_config(4:end)',opts_event, in_opt,T_in,SOFC_data_plant);
     for j = 2:size(y_plant,1)
-        [dx_global,U_pla1,P_pla1,FU_pla,Lair_pla,~,eff_pla1] = fPrimeMyProject(0,y_plant(j,:),in_RTO,T_in,SOFC_data_plant);
+        [dx_global,U_pla1,P_pla1,FU_pla,Lair_pla,~,eff_pla1] = fPrimeMyProject(0,y_plant(j,:),in_opt,T_in,SOFC_data_plant);
         power_plant_hist = [power_plant_hist; P_pla1];
         volt_plant_hist  = [volt_plant_hist; U_pla1];
         FU_plant_hist    = [FU_plant_hist; FU_pla];
         Lair_plant_hist  = [Lair_plant_hist; Lair_pla];
-        eff_plant_hist   = [eff_plant_hist; eff_pla1];
+        eff_plant_hist = [eff_plant_hist; eff_pla1];
     end
-    [x_mod] = OPTIM_SteadyState(in_RTO,out_RTO,T_in,SOFC_data_nominal);
-    [~,U_nom1, P_nom1,~,~,~,eff_nom1] = fPrimeMyProject(0,x_mod,in_RTO,T_in,SOFC_data_nominal);
+    [x_mod] = OPTIM_SteadyState(in_opt,out_opt,T_in,SOFC_data_nominal);
+    [~,U_nom1, P_nom1,~,~,~,eff_nom1] = fPrimeMyProject(0,x_mod,in_opt,T_in,SOFC_data_nominal);
     
-    last_config       = [in_RTO'; y_plant(end,:)'];
+    last_config       = [in_opt'; y_plant(end,:)'];
     u0                = last_config';
     time_hist         = [time_hist; t_plant(2:end)];
     states_plant_hist = [states_plant_hist; y_plant(2:end,:)];
-    input_plant_hist  = [input_plant_hist; in_RTO];
+    input_plant_hist  = [input_plant_hist; in_opt];
     tstart            = t_plant(end);
     
     % Constraint adaptation
@@ -161,17 +164,17 @@ for i = 1:size(profile_setpoint,2)
     % Gradient computation
     if grad_toggle == 1
         for k = 1:3
-            in_grad    = in_RTO;
+            in_grad = in_opt;
             in_grad(k) = in_grad(k)+deltaH(k);
+            
             [t_plant,y_plant_gra] = ode15s(@fPrimeMyProject, [tstart Inf], last_config(4:end)',opts_event, in_grad,T_in,SOFC_data_plant);
-
             for j = 2:size(y_plant_gra,1)
                 [~,U_pla2,P_pla2,FU_pla,Lair_pla,~,eff_pla2] = fPrimeMyProject(0,y_plant_gra(j,:),in_grad,T_in,SOFC_data_plant);
                 power_plant_hist = [power_plant_hist; P_pla2];
                 volt_plant_hist  = [volt_plant_hist; U_pla2];
                 FU_plant_hist    = [FU_plant_hist; FU_pla];
                 Lair_plant_hist  = [Lair_plant_hist; Lair_pla];
-                eff_plant_hist   = [eff_plant_hist; eff_pla2];
+                eff_plant_hist = [eff_plant_hist; eff_pla2];
             end
 
             [x_mod] = OPTIM_SteadyState(in_grad,T_0,T_in,SOFC_data_nominal);
@@ -184,13 +187,13 @@ for i = 1:size(profile_setpoint,2)
             grad_Effic_nomnl(k) = (eff_nom2-eff_nom1)/deltaH(k);
             grad_Effic_plant(k) = (eff_pla2-eff_pla1)/deltaH(k);
 
-            time_hist         = [time_hist; t_plant(2:end)];
+            time_hist = [time_hist; t_plant(2:end)];
             states_plant_hist = [states_plant_hist; y_plant_gra(2:end,:)];
             input_plant_hist  = [input_plant_hist; in_grad];
             duration_gradMod  = [duration_gradMod tstart];
             duration_inputs   = [duration_inputs; tstart];
             
-            last_config = [in_RTO'; y_plant_gra(end,:)'];
+            last_config = [in_opt'; y_plant_gra(end,:)'];
             tstart      = t_plant(end);
         end
         
@@ -200,29 +203,30 @@ for i = 1:size(profile_setpoint,2)
         modif(1,1:3) = (1-Kgrad)*modif(1,1:3) + Kgrad*(grad_Effic_plant-grad_Effic_nomnl); % Gradient efficiency
     end
     
-    duration_RTO    = [duration_RTO; tstart];
+    duration_RTO = [duration_RTO; tstart];
     duration_inputs = [duration_inputs; tstart];
-    u_previous      = in_RTO;
+    u_previous = in_opt;
 end
 
+%% Optimal values
+Popt_hist = Ps_el;
+Uopt_hist = Ucell_opt*ones(1,size(Ps_el,2));
 
-%% -----------------
-% Generating plots
-% ------------------
-% Optimal values references
-Popt_hist      = Ps_el;
-Uopt_hist      = Ucell_opt*ones(1,size(Ps_el,2));
-RTO_cycle      = duration_RTO'/3600;
-RTO_cycle      = [RTO_cycle; RTO_cycle];
+RTO_cycle = duration_RTO'/3600;
+RTO_cycle = [RTO_cycle; RTO_cycle];
+
 Gradient_cycle = duration_gradMod/3600;
 Gradient_cycle = [Gradient_cycle; Gradient_cycle];
 
+%% Post-process
+
+close all
 set(0,'DefaultFigureWindowStyle','docked')
 
-figure('Name','power','Color','w')
-power_graph(1) = plot(time_hist/3600,power_plant_hist,'Linewidth',1);
+figure('Name','power','Color','w','Units','centimeters','Position',[5 5 18 7])
+power_graph(1) = plot(time_hist/3600,power_plant_hist,'Linewidth',2);
 hold on
-power_graph(2) = stairs(duration_RTO/3600,[Popt_hist Popt_hist(end)],'--','Linewidth',1);
+power_graph(2) = stairs(duration_RTO/3600,[Popt_hist Popt_hist(end)],'--','Linewidth',2);
 ylim = get(gca,'ylim');
 power_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -231,17 +235,17 @@ if grad_toggle == 1
 else
     lgd = legend([power_graph power_graph_RTO(1)] ,'plant','reference','RTO cycle','Location','northwest');
 end
-lgd.Interpreter = 'latex';
+% lgd.Interpreter = 'latex';
 xlabel('Time [h]','Interpreter','latex');
-ylabel('Power $P_{el}$ [W]','Interpreter','latex');
+ylabel('Power P_{el} [W]','Interpreter','latex');
 title('Power','Interpreter','latex')
 set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
 
-% Efficiency
-figure('Name','efficiency')
-eff_graph(1) = plot(time_hist/3600,eff_plant_hist,'LineWidth',1);
+%%
+figure('Name','efficiency','Units','centimeters','Position',[5 5 18 7])
+eff_graph(1) = plot(time_hist/3600,eff_plant_hist,'LineWidth',2);
 hold on
-eff_graph(2) = stairs(duration_RTO/3600, [eff_opt_hist eff_opt_hist(end)], '--','Linewidth',1);
+eff_graph(2) = stairs(duration_RTO/3600, [eff_opt_hist eff_opt_hist(end)], '--','Linewidth',2);
 ylim = get(gca,'ylim') + [0.0001 -0.0001];
 eff_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -250,17 +254,21 @@ if grad_toggle == 1
 else
     lgd = legend([eff_graph eff_graph_RTO(1)],'plant','plant optimum','RTO cycle');
 end
-lgd.Interpreter = 'latex';
-xlabel('Time [h]','Interpreter','latex');
-ylabel('Efficiency $\eta$ [-]','Interpreter','latex')
-title('Efficiency of the fuel cell','Interpreter','latex')
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+% lgd.Interpreter = 'latex';
+xlabel('Time [h]');
+ylabel('Efficiency \eta [-]')
+% title('Efficiency of the fuel cell','Interpreter','latex')
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
+print('graphs\RTO_MA_efficiency','-dpng','-r300')
 
-% Cell voltage
-figure('Name','voltage')
-volt_graph(1) = plot(time_hist/3600,volt_plant_hist,'LineWidth',1);
+%%
+figure('Name','voltage','Units','centimeters','Position',[5 5 18 7])
+volt_graph(1) = plot(time_hist/3600,volt_plant_hist,'LineWidth',2);
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
 hold on
-volt_graph(2) = stairs(duration_RTO/3600, [Uopt_hist Uopt_hist(end)], '--','Linewidth',1);
+volt_graph(2) = stairs(duration_RTO/3600, [Uopt_hist Uopt_hist(end)], '--','Linewidth',2);
 ylim = get(gca,'ylim') + [0.0001 -0.0001];
 volt_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -269,17 +277,19 @@ if grad_toggle == 1
 else
     lgd = legend([volt_graph volt_graph_RTO(1)],'plant','lower limit','RTO cycle','Location','southeast');
 end
-lgd.Interpreter = 'latex';
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+% lgd.Interpreter = 'latex';
 xlabel('Time [h]');
 ylabel('Voltage U_{cell} [V]');
-title('Efficiency of the fuel cell')
+% title('Efficiency of the fuel cell')
+print('graphs\RTO_MA_volt','-dpng','-r300')
 
-% Fuel utilization
-figure('Name','FU')
-FU_graph(1) = plot(time_hist/3600,FU_plant_hist,'LineWidth',1);
+%%
+figure('Name','FU','Units','centimeters','Position',[5 5 18 7])
+FU_graph(1) = plot(time_hist/3600,FU_plant_hist,'LineWidth',2);
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
 hold on
-FU_graph(2) = stairs(duration_RTO/3600, [output_opt_hist(1,:) output_opt_hist(1,end)], '--','Linewidth',1);
+FU_graph(2) = stairs(duration_RTO/3600, [output_opt_hist(1,:) output_opt_hist(1,end)], '--','Linewidth',2);
 ylim = get(gca,'ylim') + [0.0001 -0.0001];
 FU_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -288,17 +298,19 @@ if grad_toggle == 1
 else
     lgd = legend([FU_graph FU_graph_RTO(1)],'plant','plant optimum','RTO cycle','Location','northeast');
 end
-lgd.Interpreter = 'latex';
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+% lgd.Interpreter = 'latex';
 xlabel('Time [h]');
-ylabel('Fuel utilization $FU$ [-]','Interpreter','latex');
-title('Fuel utilization')
+ylabel('Fuel utilization FU [-]');
+% title('Efficiency of the fuel cell')
+print('graphs\RTO_MA_FU','-dpng','-r300')
 
-% Air ratio
-figure('Name','Lair')
-Lair_graph(1) = plot(time_hist/3600,Lair_plant_hist,'LineWidth',1);
+%%
+figure('Name','Lair','Units','centimeters','Position',[5 5 18 7])
+Lair_graph(1) = plot(time_hist/3600,Lair_plant_hist,'LineWidth',2);
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
 hold on
-Lair_graph(2) = stairs(duration_RTO/3600, [output_opt_hist(2,:) output_opt_hist(2,end)], '--','Linewidth',1);
+Lair_graph(2) = stairs(duration_RTO/3600, [output_opt_hist(2,:) output_opt_hist(2,end)], '--','Linewidth',2);
 ylim = get(gca,'ylim') + [0.0001 -0.0001];
 Lair_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -307,17 +319,19 @@ if grad_toggle == 1
 else
     lgd = legend([Lair_graph Lair_graph_RTO(1)],'plant','upper limit','RTO cycle','Location','northeast');
 end
-lgd.Interpreter = 'latex';
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
-xlabel('Time [h]','Interpreter','latex');
-ylabel('Air ratio $\lambda_{air}$ [-]','Interpreter','latex');
-title('Efficiency','Interpreter','latex')
+% lgd.Interpreter = 'latex';
+xlabel('Time [h]');
+ylabel('Air ratio \lambda_{air} [-]');
+% title('Efficiency of the fuel cell')
+print('graphs\RTO_MA_Lair','-dpng','-r300')
+%%
 
-% Methane
-figure('Name','CH4 input')
-inCH4_graph(1) = stairs(duration_inputs/3600,[input_plant_hist(:,1); input_plant_hist(end,1)],'LineWidth',1);
+figure('Name','CH4 input','Units','centimeters','Position',[5 5 18 7])
+inCH4_graph(1) = stairs(duration_inputs/3600,[input_plant_hist(:,1); input_plant_hist(end,1)],'LineWidth',2);
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
 hold on
-inCH4_graph(2) = stairs(duration_RTO/3600,[inputs_opt_hist(1,:) inputs_opt_hist(1,end)],'--','Linewidth',1);
+inCH4_graph(2) = stairs(duration_RTO/3600,[inputs_opt_hist(1,:) inputs_opt_hist(1,end)],'--','Linewidth',2);
 ylim = get(gca,'ylim')+[0 -0.0001];
 inCH4_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -326,17 +340,17 @@ if grad_toggle == 1
 else
     lgd = legend([inCH4_graph inCH4_graph_RTO(1)],'plant','plant optimum','RTO cycle','Location','northwest');
 end
-lgd.Interpreter = 'latex';
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+% lgd.Interpreter = 'latex';
 xlabel('Time [h]');
-ylabel('Flow $\dot{q}_{CH4}$ [L/min]','Interpreter','latex')
-title('Flow methane $\dot{q}_{CH4}$ [L/min]','Interpreter','latex')
+ylabel('Flow CH4 [L/min]')
+% title('Flow methane CH4 [L/min]')
+print('graphs\RTO_MA_CH4','-dpng','-r300')
 
-% Air
-figure('Name','air input')
-inAir_graph(1) = stairs(duration_inputs/3600,[input_plant_hist(:,2); input_plant_hist(end,2)],'LineWidth',1);
+
+figure('Name','air input','Units','centimeters','Position',[5 5 18 7])
+inAir_graph(1) = stairs(duration_inputs/3600,[input_plant_hist(:,2); input_plant_hist(end,2)],'LineWidth',2);
 hold on
-inAir_graph(2) = stairs(duration_RTO/3600,[inputs_opt_hist(2,:) inputs_opt_hist(2,end)],'--','Linewidth',1);
+inAir_graph(2) = stairs(duration_RTO/3600,[inputs_opt_hist(2,:) inputs_opt_hist(2,end)],'--','Linewidth',2);
 ylim = get(gca,'ylim')+[0 -0.0001];
 inAir_graph_RTO = line(RTO_cycle, ylim,'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
@@ -345,17 +359,20 @@ if grad_toggle == 1
 else
     lgd = legend([inAir_graph inAir_graph_RTO(1)],'plant','plant optimum','RTO cycle','Location','northwest');
 end
-lgd.Interpreter = 'latex';
-xlabel('Time [h]','Interpreter','latex')
-ylabel('Flow Air $\dot{q}_\mathrm{air}$ [L/min]','Interpreter','latex')
-title('Flow Air $\dot{q}_{CH4}$','Interpreter','latex')
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+% lgd.Interpreter = 'latex';
+xlabel('Time [h]')
+ylabel('Flow Air [L/min]')
+% title('Flow Air')
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
+print('graphs\RTO_MA_air','-dpng','-r300')
 
-% Current
-figure('Name','current input')
-inCurrent_graph(1) = stairs(duration_inputs/3600,[input_plant_hist(:,3); input_plant_hist(end,3)],'LineWidth',1);
+
+figure('Name','current input','Units','centimeters','Position',[5 5 18 7])
+inCurrent_graph(1) = stairs(duration_inputs/3600,[input_plant_hist(:,3); input_plant_hist(end,3)],'LineWidth',2);
 hold on
-inCurrent_graph(2) = stairs(duration_RTO/3600,[inputs_opt_hist(3,:) inputs_opt_hist(3,end)],'--','Linewidth',1);
+inCurrent_graph(2) = stairs(duration_RTO/3600,[inputs_opt_hist(3,:) inputs_opt_hist(3,end)],'--','Linewidth',2);
+
 inCurrent_graph_RTO = line(RTO_cycle, get(gca,'ylim'),'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 if grad_toggle == 1
     inCurrent_graph_grad = line(Gradient_cycle, get(gca,'ylim'), 'Color',[0.4 0.4 0.4],'LineStyle',':','LineWidth',0.5);
@@ -363,8 +380,10 @@ if grad_toggle == 1
 else
     lgd = legend([inCurrent_graph inCurrent_graph_RTO(1)],'plant','plant optimum','RTO cycle','Location','northwest');
 end
-lgd.Interpreter = 'latex';
-xlabel('Time [h]','Interpreter','latex')
-ylabel('Current [A]','Interpreter','latex')
-title('Current','Interpreter','latex')
-set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+% lgd.Interpreter = 'latex';
+xlabel('Time [h]')
+ylabel('Current [A]')
+% title('Current')
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'LineWidth',1,'TickLabelInterpreter','latex')
+set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'LineWidth',1,'FontName','Roboto Condensed')
+print('graphs\RTO_MA_current','-dpng','-r300')

@@ -20,13 +20,10 @@ D = sys_d.D;
 
 % Linearized steady states and input @ power setpoint
 H = [C D; A-eye(ns) B];
-
 target_config = H\[0; 0; zeros(ns+ni-no-1,1)];
 
 %% MPC controller
 Q = 1*eye(ns);
-% R_scaling = [ 1000/0.3   1/15   1/20 ];
-% R = 100*diag(R_scaling);
 R = 100*eye(ni);
 
 N = 40;  % horizon length
@@ -35,7 +32,6 @@ N = 40;  % horizon length
 x_hat  = sdpvar(ns,N,'full');
 x_target = sdpvar(ns,1,'full');
 u_hat  = sdpvar(ni,N,'full');
-% u_nonlin = sdpvar(ni,N,'full');
 u_target = sdpvar(ni,1,'full');
 u_prev = sdpvar(ni,1,'full');
 y = sdpvar(no,N,'full');
@@ -69,7 +65,7 @@ obj = obj + (x_hat(:,i)-x_target)'*Q*(x_hat(:,i)-x_target)...
 parameters_in = {x_hat(:,1), x_target, u_target, u_prev};
 solutions_out = {u_hat};
 
-% Compile the matrices
+% Compiling the matrices
 controller = optimizer(con, obj, [], parameters_in, solutions_out);
 
 end

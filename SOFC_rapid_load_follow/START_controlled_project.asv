@@ -72,22 +72,23 @@ u_0 = [q_CH4inp,q_AIRcathinp,Iinp];
 % Initial guess for the optimization problem
 u0 = [u_0 T_0];
 
-% Optimal values for comparison with simulation results
+% Optimal values for comparison with simulation
 Pel_opt    = [80 90 100];
 Ucell_opt  = 0.7;
 eff_opt    = [0.4297   0.4260  0.4226];
 inputs_opt = [0.3163   0.3589  0.402;
               12.4936 13.8194 15.1185;
-              19.0476 21.4286 23.8095];          
+              19.0476 21.4286 23.8095];
+          
 output_opt = [0.6379 0.6325 0.6274;
               4.1479 4.0433 3.9493];
 
 profile_setpoint = [1*ones(1,5) 2*ones(1,5)];  % profile setpoint
 
-Ps_el           = [];
-Uopt_hist       = [];
-eff_opt_hist    = [];
+Ps_el = [];
+Uopt_hist = [];
 inputs_opt_hist = [];
+eff_opt_hist = [];
 for i = 1:size(profile_setpoint,2)
     Ps_el(i) = Pel_opt(profile_setpoint(i));
     inputs_opt_hist(:,i) = inputs_opt(:,profile_setpoint(i));
@@ -116,10 +117,12 @@ A   = [2*Lair_lower,  -0.21,  0,  zeros(1,8);
       -FU_upper,          0,  kc, zeros(1,8)];
 B   =  [0;0;0];
 
-% Simulation
 myProblem.TC.TimeConstantOff = 0;
-last_config = [0.3014; 12.0960; 19.0476; 895.4908; 1101.9426; 1101.3417; 1101.5156; 1101.1082; 1409.1253; 915.8712; 905.0253]; % intial states & inputs of the plant
-modif       = zeros(3,4);
+
+% Simulation
+last_config = [0.3014; 12.0960; 19.0476; 895.4908; 1101.9426; 1101.3417; 1101.5156; 1101.1082; 1409.1253; 915.8712; 905.0253];
+
+modif = zeros(3,4);
 
 states_plant_hist = [];
 power_plant_hist  = [];
@@ -153,8 +156,8 @@ for i = 1:size(profile_setpoint,2)
     Lair_plant_hist   = [Lair_plant_hist Lair_plant];
     eff_plant_hist    = [eff_plant_hist eff_plant];
     
-    duration_time(i)  = size(states_plant,2);
-    duration_temp     = size(states_plant_hist,2);
+    duration_time(i) = size(states_plant,2);
+    duration_temp    = size(states_plant_hist,2);
     
     [states_plant, input_plant, last_config, P_plant, U_plant, FU_plant, Lair_plant, eff_plant, modif,duration_inputs] = MPC_grad(InOut_opt',output_nompla,modif,Ps_el(it),Ucell_opt,T_0,T_in,SOFC_data_nominal,SOFC_data_plant,A,B,lb,ub,last_config,0);
     states_plant_hist = [ states_plant_hist states_plant];
@@ -191,6 +194,14 @@ time_step  = [1:1:size(states_plant_hist,2)]*Ts/3600;
 RTO_cycle  = [0 duration_RTO; 0 duration_RTO]*Ts/3600;
 grad_cycle = [duration_grad; duration_grad]*Ts/3600;
 
+% figure('Name','temperatures','Color','w')
+% plot(time_step, states_plant_hist,'LineWidth',1);
+% legend({'Reformer','electrolyte','interconnect','fuel channel','air channel','burner','HEX fuel','HEX air'},'Interpreter','latex')
+% xlabel('Time [h]','Interpreter','latex')
+% ylabel('Temperature [K]','Interpreter','latex')
+% title('Temperatures in the system','Interpreter','latex')
+% set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',12,'TickLabelInterpreter','latex')
+% grid on
 
 figure('Name','power','Color','w','Units','centimeters','Position',[5 5 18 7])
 power_graph      = plot(time_step, power_plant_hist,time_step,Popt_hist,'--','LineWidth',2);
@@ -228,7 +239,7 @@ set(gca,'Box','off','FontUnits','points','FontWeight','normal','FontSize',14,'Fo
 volt_graph_RTO  = line(RTO_cycle, get(gca,'ylim'),'Color',[0.1 0.1 0.1],'LineStyle','--','LineWidth',0.75);
 volt_graph_grad = line(grad_cycle, get(gca,'ylim'), 'Color',[0.4 0.4 0.4],'LineStyle',':','LineWidth',0.5);
 lgd = legend([volt_graph' volt_graph_RTO(1) volt_graph_grad(1)],'plant','plant optimum','RTO cycle','gradient computation');
-lgd.Interpreter = 'latex';
+% lgd.Interpreter = 'latex';
 xlabel('Time [h]')
 ylabel('Voltage U_{cell} [V]')
 % title('Voltage of the cell','Interpreter','latex')
